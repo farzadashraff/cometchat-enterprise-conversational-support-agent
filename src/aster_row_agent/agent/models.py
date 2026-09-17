@@ -135,6 +135,17 @@ class RoutingDecision(BaseModel):
     retrieval_query: str | None
     """The text to send to the Phase 3 `EvidenceAssembler`, when
     `route_kind` implies a knowledge lookup. None otherwise."""
+    reports_item_problem: bool
+    """True when the message reports that an item the customer already
+    received arrived damaged, defective, or wrong (e.g. "arrived
+    broken", "received the wrong size") — as opposed to a hypothetical
+    or general policy question about that possibility. Per docs 04/07,
+    any resolution for such a report requires human review before it can
+    be promised, regardless of which specific evidence the retrieval
+    layer happens to surface for the exact phrasing used (see BUG-004,
+    docs/architecture.md §22) — this is therefore an unconditional
+    handoff trigger in `handoff.py`, independent of `route_kind` and of
+    `EvidenceBundle.disposition`."""
 
 
 # --- response ------------------------------------------------------------------------
@@ -161,6 +172,7 @@ class HandoffReason(StrEnum):
     ORDER_DATASET_ERROR = "order_dataset_error"
     ORDER_REQUIRES_SUPPORT_REVIEW = "order_requires_support_review"
     UNSUPPORTED_ACTION_REQUESTED = "unsupported_action_requested"
+    ITEM_PROBLEM_REQUIRES_REVIEW = "item_problem_requires_review"
     VALIDATION_FAILED = "validation_failed"
     LLM_UNAVAILABLE = "llm_unavailable"
 

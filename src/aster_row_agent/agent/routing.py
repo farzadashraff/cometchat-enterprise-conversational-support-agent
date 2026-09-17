@@ -103,6 +103,42 @@ def _is_direct_action_command(message: str) -> bool:
     return _requests_unsupported_action(message) and not _ELIGIBILITY_QUESTION_RE.search(message)
 
 
+# --- received-item-problem detection (BUG-004, docs/architecture.md §22) -------------
+#
+# Docs 04 and 07 both state, in plain text, that a resolution (refund/
+# replacement/warranty approval) for an already-received problem item may
+# never be promised before a human review is completed. That sentence
+# does not reliably retrieve for every phrasing of the scenario it
+# governs (heading-level chunking means it can rank far outside any
+# reasonable top-K for a query that is topically about the *rest* of the
+# same document) — so this cannot be a retrieval-completeness fix without
+# either editing the supplied corpus (out of scope) or non-selectively
+# widening retrieval for every query (a broad, unrelated behavior change).
+# It also cannot be an evidence/heading-level gate: the doc 04 "Available
+# resolutions" heading was empirically confirmed to surface as incidental
+# retrieval noise for unrelated queries (a shipping-delay refund question,
+# even a lifetime-warranty question) that must NOT force a handoff.
+#
+# The one signal that is actually specific to this scenario, and not
+# noisy, is the message itself: the customer is reporting that an item
+# they already received arrived damaged, defective, or wrong — a
+# completed-receipt narration, not a hypothetical ("what if it arrives
+# damaged?") or a general policy question. This mirrors the existing
+# `_is_direct_action_command` pragmatic-signal pattern already used in
+# this module rather than introducing a new mechanism.
+_ITEM_PROBLEM_RE = re.compile(
+    r"\b(arrived|received|came|got)\b.{0,20}"
+    r"\b(damaged|broken|defective|faulty|cracked|torn|incorrect|"
+    r"wrong (item|size|color|colour))\b",
+    re.IGNORECASE,
+)
+_HYPOTHETICAL_FRAMING_RE = re.compile(r"\b(if|what if|suppose|in case|imagine)\b", re.IGNORECASE)
+
+
+def _reports_item_problem(message: str) -> bool:
+    return bool(_ITEM_PROBLEM_RE.search(message)) and not _HYPOTHETICAL_FRAMING_RE.search(message)
+
+
 # --- order-ID candidate scanning ------------------------------------------------------
 #
 # A loose scan for "the user is clearly attempting to reference an order
@@ -159,6 +195,7 @@ def classify_message(message: str, session: Session) -> RoutingDecision:
     """
     requests_unsupported_action = _requests_unsupported_action(message)
     action_is_direct_command = _is_direct_action_command(message)
+    reports_item_problem = _reports_item_problem(message)
 
     if _is_sensitive_request(message):
         return RoutingDecision(
@@ -169,6 +206,7 @@ def classify_message(message: str, session: Session) -> RoutingDecision:
             resolved_order_id=None,
             order_id_source=None,
             retrieval_query=None,
+            reports_item_problem=reports_item_problem,
         )
 
     order_id_candidate = _find_order_id_candidate(message)
@@ -219,6 +257,7 @@ def classify_message(message: str, session: Session) -> RoutingDecision:
         resolved_order_id=resolved_order_id,
         order_id_source=order_id_source,
         retrieval_query=retrieval_query,
+        reports_item_problem=reports_item_problem,
     )
 
 

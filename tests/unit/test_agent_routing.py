@@ -191,6 +191,54 @@ def test_no_action_request_means_command_flag_is_false() -> None:
     assert routing.action_is_direct_command is False
 
 
+# --- received-item-problem detection (BUG-004, docs/architecture.md §22) ---------------
+
+
+def test_arrived_broken_report_is_detected_as_an_item_problem() -> None:
+    routing = classify_message(
+        "A final-sale bag arrived with a broken zipper yesterday. Am I completely out of luck?",
+        _session(),
+    )
+    assert routing.reports_item_problem is True
+
+
+def test_received_defective_paraphrase_is_detected() -> None:
+    routing = classify_message("I received a defective tumbler.", _session())
+    assert routing.reports_item_problem is True
+
+
+def test_got_wrong_size_paraphrase_is_detected() -> None:
+    routing = classify_message("The item I got was the wrong size.", _session())
+    assert routing.reports_item_problem is True
+
+
+def test_came_broken_paraphrase_is_detected() -> None:
+    routing = classify_message("It came broken.", _session())
+    assert routing.reports_item_problem is True
+
+
+def test_hypothetical_arrival_question_is_not_an_item_problem_report() -> None:
+    routing = classify_message("If it arrived damaged, what would I do?", _session())
+    assert routing.reports_item_problem is False
+
+
+def test_future_tense_hypothetical_is_not_an_item_problem_report() -> None:
+    routing = classify_message("What happens if an item arrives damaged?", _session())
+    assert routing.reports_item_problem is False
+
+
+def test_unrelated_late_arrival_is_not_an_item_problem_report() -> None:
+    routing = classify_message(
+        "ORD-1001 arrived late. Can I get a refund under your current policy?", _session()
+    )
+    assert routing.reports_item_problem is False
+
+
+def test_ordinary_policy_question_is_not_an_item_problem_report() -> None:
+    routing = classify_message("What is your return policy?", _session())
+    assert routing.reports_item_problem is False
+
+
 # --- determinism -------------------------------------------------------------------------
 
 

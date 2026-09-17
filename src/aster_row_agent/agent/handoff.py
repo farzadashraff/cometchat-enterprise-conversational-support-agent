@@ -30,6 +30,14 @@ def decide_pre_llm_handoff(
     if routing.route_kind is RouteKind.SENSITIVE_REQUEST:
         return True, HandoffReason.SENSITIVE_DATA_REQUEST
 
+    # A reported damaged/defective/wrong-item receipt always requires
+    # human review before any resolution can be promised (docs 04/07) —
+    # unconditional on route kind or evidence disposition (BUG-004, see
+    # docs/architecture.md §22: retrieval and evidence-bundle content are
+    # both too unreliable for this specific query shape to gate on).
+    if routing.reports_item_problem:
+        return True, HandoffReason.ITEM_PROBLEM_REQUIRES_REVIEW
+
     if evidence_bundle is not None:
         if evidence_bundle.disposition is EvidenceDisposition.AUTHORITATIVE_CONFLICT:
             return True, HandoffReason.AUTHORITATIVE_CONFLICT

@@ -1,16 +1,16 @@
 {
   "run_label": "final",
-  "generated_at": "2026-09-17T04:05:29.224438+00:00",
+  "generated_at": "2026-09-17T06:10:06.471607+00:00",
   "total": 28,
-  "passed": 27,
-  "failed": 1,
+  "passed": 28,
+  "failed": 0,
   "category_breakdown": {
     "retrieval": {
       "passed": 3,
       "total": 3
     },
     "multi-source-grounding": {
-      "passed": 0,
+      "passed": 1,
       "total": 1
     },
     "conversation": {
@@ -124,7 +124,7 @@
     {
       "id": "final-sale-damaged-exception",
       "category": "multi-source-grounding",
-      "passed": false,
+      "passed": true,
       "error": null,
       "assertions": [
         {
@@ -144,8 +144,8 @@
         },
         {
           "name": "handoff",
-          "passed": false,
-          "detail": "expected=True, actual=False"
+          "passed": true,
+          "detail": "expected=True, actual=True"
         }
       ]
     },

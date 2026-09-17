@@ -26,6 +26,7 @@ def _routing(**overrides: object) -> RoutingDecision:
         resolved_order_id=None,
         order_id_source=None,
         retrieval_query="test query",
+        reports_item_problem=False,
     )
     base.update(overrides)
     return RoutingDecision.model_validate(base)
@@ -133,6 +134,29 @@ def test_answerable_evidence_does_not_force_handoff() -> None:
     )
     assert handoff is False
     assert reason is None
+
+
+def test_reported_item_problem_forces_handoff_even_when_evidence_is_answerable() -> None:
+    """BUG-004 (docs/architecture.md §22): a reported damaged/defective/
+    wrong-item receipt must force handoff unconditionally, independent
+    of evidence disposition — see `routing.py::_reports_item_problem`."""
+    handoff, reason = decide_pre_llm_handoff(
+        routing=_routing(reports_item_problem=True),
+        evidence_bundle=_evidence_bundle(EvidenceDisposition.ANSWERABLE),
+        order_result=None,
+    )
+    assert handoff is True
+    assert reason is HandoffReason.ITEM_PROBLEM_REQUIRES_REVIEW
+
+
+def test_sensitive_request_takes_priority_over_reported_item_problem() -> None:
+    handoff, reason = decide_pre_llm_handoff(
+        routing=_routing(route_kind=RouteKind.SENSITIVE_REQUEST, reports_item_problem=True),
+        evidence_bundle=None,
+        order_result=None,
+    )
+    assert handoff is True
+    assert reason is HandoffReason.SENSITIVE_DATA_REQUEST
 
 
 def test_insufficient_evidence_forces_handoff_when_no_order_fallback() -> None:

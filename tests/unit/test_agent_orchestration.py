@@ -314,6 +314,93 @@ def test_bug005_short_unrelated_question_still_does_not_contaminate(
     assert len(llm.requests) == 1
 
 
+def test_bug004_reported_damaged_item_forces_handoff_even_when_evidence_is_answerable(
+    real_evidence_assembler: EvidenceAssembler, order_service: OrderLookupService
+) -> None:
+    """BUG-004 (docs/architecture.md §22): the visible case
+    "final-sale-damaged-exception" ("A final-sale bag arrived with a
+    broken zipper yesterday. Am I completely out of luck?") retrieves
+    genuinely relevant, ANSWERABLE evidence about final-sale and damaged-
+    item policy — but the specific chunk stating "must not promise...
+    before a human review is completed" ranks far outside any reasonable
+    top-K for this phrasing (verified directly: rank 16 of 53 candidates,
+    zero lexical overlap). Neither a retrieval fix nor an evidence/
+    heading-level gate is safe here: the doc 04 "Available resolutions"
+    heading was confirmed to surface as incidental noise for unrelated
+    queries that must NOT force a handoff (see the order-plus-policy and
+    no-lifetime-warranty regressions below). The fix is a message-level
+    signal: a completed-receipt damage/defect/wrong-item report always
+    requires human review before any resolution is promised, per docs
+    04/07, independent of which specific evidence the retriever surfaces
+    for that exact phrasing."""
+    agent, _ = _make_agent(
+        [
+            _canned(
+                "Final sale does not block a damaged-item review. Please report it "
+                "within 7 days; our team will review and confirm next steps before "
+                "any refund or replacement is approved.",
+                ("03-final-sale-and-promotions.md", "04-damaged-or-wrong-items.md"),
+            )
+        ],
+        real_evidence_assembler,
+        order_service,
+    )
+    response = agent.handle_message(
+        "bug004",
+        "A final-sale bag arrived with a broken zipper yesterday. Am I completely out of luck?",
+    )
+    assert response.disposition is ResponseDisposition.HANDOFF_REQUIRED
+    assert response.handoff is True
+    assert response.handoff_reason is HandoffReason.ITEM_PROBLEM_REQUIRES_REVIEW
+    assert response.validation_passed is True
+    assert {"03-final-sale-and-promotions.md", "04-damaged-or-wrong-items.md"} <= {
+        c.filename for c in response.citable_sources
+    }
+
+
+def test_bug004_fix_does_not_affect_an_unrelated_query_that_also_cites_doc04(
+    real_evidence_assembler: EvidenceAssembler, order_service: OrderLookupService
+) -> None:
+    """Regression guard for the BUG-004 fix: a query that legitimately
+    cites `04-damaged-or-wrong-items.md` without reporting a completed
+    damage/defect receipt (a late-arrival refund-eligibility question)
+    must keep its existing, correct `handoff: false` behavior."""
+    agent, _ = _make_agent(
+        [
+            _canned(
+                "Refunds aren't something I can process directly, but ORD-1001 is "
+                "eligible for review under our damaged/late item policy.",
+                ("04-damaged-or-wrong-items.md",),
+            )
+        ],
+        real_evidence_assembler,
+        order_service,
+    )
+    response = agent.handle_message(
+        "bug004-regress", "ORD-1001 arrived late. Can I get a refund under your current policy?"
+    )
+    assert response.handoff is False
+
+
+def test_bug004_fix_does_not_affect_hypothetical_damage_questions(
+    real_evidence_assembler: EvidenceAssembler, order_service: OrderLookupService
+) -> None:
+    """A hypothetical/general policy question about damaged items (not a
+    report of one already received) must not force a handoff."""
+    agent, _ = _make_agent(
+        [
+            _canned(
+                "If an item arrives damaged, you can report it within 7 days for review.",
+                ("04-damaged-or-wrong-items.md",),
+            )
+        ],
+        real_evidence_assembler,
+        order_service,
+    )
+    response = agent.handle_message("bug004-hypo", "What happens if an item arrives damaged?")
+    assert response.handoff is False
+
+
 # --- security: sensitive requests ------------------------------------------------------
 
 

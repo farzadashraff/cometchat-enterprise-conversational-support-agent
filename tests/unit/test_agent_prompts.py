@@ -35,6 +35,7 @@ def _routing(**overrides: object) -> RoutingDecision:
         resolved_order_id=None,
         order_id_source=None,
         retrieval_query="q",
+        reports_item_problem=False,
     )
     base.update(overrides)
     return RoutingDecision.model_validate(base)

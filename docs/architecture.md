@@ -1590,3 +1590,116 @@ No other code changes were made in Phase 8. The full final verification
 checklist (immutability, secrets, README/documentation accuracy, CI
 commands) is reported in the Phase 8 completion report rather than
 duplicated here.
+
+## 22. Final release hardening: BUG-004 fixed
+
+BUG-004 (§20.2) was carried forward from Phase 7 as a deliberately
+unfixed, documented known limitation. It has since been fixed. This
+section records the investigation and the fix; §20.2's original entry is
+left as written (an accurate record of what was true at the time) rather
+than rewritten.
+
+**Root-cause investigation, redone from scratch against the live code:**
+
+1. The visible case `final-sale-damaged-exception` ("A final-sale bag
+   arrived with a broken zipper yesterday. Am I completely out of
+   luck?") expects `handoff: true`. Direct inspection of the real
+   `EvidenceAssembler` output confirmed the evidence bundle is
+   `ANSWERABLE`, and `decide_pre_llm_handoff` had no rule that could ever
+   set `handoff=True` for a bare `ANSWERABLE` disposition — confirming
+   the mismatch is a genuine missing-rule gap, not a transient retrieval
+   fluke.
+2. Doc 04's exact sentence — "The support agent must not promise that a
+   refund or replacement has been approved before a human review is
+   completed." — lives in the "Reports after seven days" heading, which
+   was confirmed (via `Retriever.retrieve` with `top_k=30`) to rank
+   16th of 53 scored candidates for this query (raw semantic score
+   0.637, lexical score 0.0) — far outside the production `top_k=8` /
+   `max_selected_evidence=4` window. This is not a bug in retrieval
+   scoring; the chunk is genuinely more about a different sub-topic
+   (late/manufacturing-defect reporting) than the query's actual
+   subject.
+3. Two fix strategies were tried empirically and rejected before
+   settling on the one below:
+   - **Retrieval-level** (surface the exact chunk): rejected — would
+     require either editing the supplied knowledge base (out of scope)
+     or globally loosening retrieval thresholds/`top_k` for every query,
+     an unrelated, broad behavior change for one case.
+   - **Evidence/heading-level gate** ("force handoff whenever doc 04's
+     resolution-related headings are selected"): empirically rejected.
+     Direct inspection of the real evidence bundle for two *other*,
+     already-passing cases — `order-plus-policy-combo` ("ORD-1001
+     arrived late. Can I get a refund...?", `handoff: false`) and
+     `no-lifetime-warranty` ("Do all products have a lifetime
+     warranty?", `handoff: false`) — showed BOTH legitimately retrieve
+     `04-damaged-or-wrong-items.md > Available resolutions` as
+     authoritative evidence, purely as retrieval noise. Any document- or
+     heading-keyed gate on that heading would have forced an incorrect
+     handoff on two unrelated, currently-correct cases.
+4. **The fix**: a message-level signal. The customer's own message is
+   the only thing specific to this scenario and not noisy: reporting
+   that an *already-received* item arrived damaged/defective/wrong is a
+   completed-receipt narration, structurally different from a
+   hypothetical or general policy question. This mirrors the existing,
+   already-established `_is_direct_action_command` pragmatic-regex
+   pattern in `routing.py` rather than introducing a new mechanism.
+
+**Implementation** (`src/aster_row_agent/agent/routing.py`,
+`handoff.py`, `models.py`):
+
+- `RoutingDecision` gained a new field, `reports_item_problem: bool`,
+  computed by `_reports_item_problem()`: true when the message matches
+  `_ITEM_PROBLEM_RE` (a completed-receipt verb — "arrived"/"received"/
+  "came"/"got" — followed within 20 characters by a problem adjective —
+  "damaged"/"broken"/"defective"/"faulty"/"cracked"/"torn"/"incorrect"/
+  "wrong item|size|color") and does **not** match
+  `_HYPOTHETICAL_FRAMING_RE` ("if"/"what if"/"suppose"/"in case"/
+  "imagine").
+- `HandoffReason` gained `ITEM_PROBLEM_REQUIRES_REVIEW`.
+- `handoff.py::decide_pre_llm_handoff` now returns
+  `(True, HandoffReason.ITEM_PROBLEM_REQUIRES_REVIEW)` whenever
+  `routing.reports_item_problem` is true — checked immediately after the
+  `SENSITIVE_REQUEST` check and before any evidence/order-based rule, so
+  it is unconditional on evidence disposition, route kind, or order
+  outcome. The LLM is still called as normal (unlike `SENSITIVE_REQUEST`,
+  which short-circuits before generation) so the customer still gets a
+  grounded, cited answer — `handoff` is simply forced `True` on top of
+  it, exactly as `AUTHORITATIVE_CONFLICT` already works.
+
+**Verified not to over-trigger**: every case/message in both
+`evaluation/visible-cases.json` and `evaluation/custom-cases.json` was
+checked against `_ITEM_PROBLEM_RE` directly — the fixed case is the only
+match in the entire corpus. `order-plus-policy-combo` ("arrived late",
+no problem adjective) and a direct hypothetical-phrasing test ("What
+happens if an item arrives damaged?") were both re-verified to keep
+`handoff: false`.
+
+**Regression tests**: `test_reported_item_problem_forces_handoff_even_when_evidence_is_answerable`
+and `test_sensitive_request_takes_priority_over_reported_item_problem`
+in `tests/unit/test_agent_handoff.py`; eight paraphrase/negative-case
+tests in `tests/unit/test_agent_routing.py`; three end-to-end tests in
+`tests/unit/test_agent_orchestration.py` (the fix, the
+order-plus-policy-combo non-regression, and the hypothetical-framing
+non-regression). `tests/unit/test_evaluation_runner.py` no longer
+excludes `final-sale-damaged-exception` from its zero-failures
+assertion.
+
+**Result**: full pytest suite **521 passed** (up from 508 — 13 new
+tests). `ruff check` and `mypy` remain clean. The evaluation suite is now
+**28/28 passed** (up from 27/28) — BUG-004 was the suite's last
+remaining failure. `evaluation/results-baseline.json` is unaffected
+(unchanged, still the Phase 6→7 historical snapshot);
+`evaluation/results-final.json` was regenerated and now shows 0
+failures.
+
+**Genuine remaining scope note**: this fix is intentionally narrow to
+the "item arrived damaged/defective/wrong" scenario doc 04 governs, not
+the broader warranty-claim-during-use scenario doc 07 also mentions
+("a human support specialist reviews eligibility... must not promise
+approval") — no visible or original case currently exercises that
+second scenario, and extending the same pattern to it would be
+speculative scope beyond this bug report. Should such a case arise, the
+same `reports_item_problem`-style approach (a message-level signal,
+not a retrieval or evidence-level one) is the established precedent to
+follow, per the empirical rejection of both alternatives in step 3
+above.

@@ -23,6 +23,22 @@ jobs:
       - name: Type check (mypy)
         run: mypy src tests
 
+      - name: Build retrieval index (ingest)
+        # `.data/` (the derived index + embedding cache) is intentionally
+        # gitignored — it's a rebuildable artifact of `knowledge-base/`,
+        # not source. A handful of tests (e.g. test_evaluation_runner.py,
+        # and test_cli_chat.py's build_agent success-path test) exercise
+        # the real, *default* on-disk index directly, the same way a
+        # developer would after following the README's own documented
+        # `ingest` step — they intentionally don't build their own
+        # throwaway index the way the retrieval/evidence fixtures in
+        # tests/conftest.py do. On a fresh checkout that index doesn't
+        # exist yet, so this step builds it once before the tests run.
+        # No ANTHROPIC_API_KEY or Anthropic network call is involved —
+        # ingestion only needs the local embedding model (downloaded once
+        # here; see the Unit tests step below).
+        run: python -m aster_row_agent.cli ingest
+
       - name: Unit tests
         # No ANTHROPIC_API_KEY or LLM network calls are ever needed (every
         # LLM-path test uses FakeLLMClient). Most retrieval/evidence tests
