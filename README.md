@@ -279,14 +279,15 @@ methodology and per-category breakdown):
 | Metric | Baseline | Final |
 |---|---:|---:|
 | Cases | 27 | 28 |
-| Passed | 23 | 27 |
-| Failed | 4 | 1 |
+| Passed | 23 | 28 |
+| Failed | 4 | 0 |
 
 The baseline (27 cases) predates one case added during Phase 8 hardening
 (see BUG-005 below); it is preserved unmodified as a historical artifact
 of the Phase 6→7 transition rather than retroactively extended. The
-final run's one remaining failure is BUG-004, an intentionally
-undisclosed-nowhere-but-here known limitation — see the bug diary below.
+final run now passes every case: BUG-004, the suite's last remaining
+failure, has since been fixed (commit `430d9fb`) — see the bug diary
+below.
 
 Raw artifacts: `evaluation/results-baseline.json`,
 `evaluation/results-final.json`.
@@ -303,12 +304,15 @@ are in [`docs/architecture.md` §20.2](docs/architecture.md).
 | **BUG-001** | Groundedness/abstention | A correctly-hedged "I don't have confirmation that's vegan" answer did not trigger a human handoff. | Handoff was driven only by evidence-*bundle*-level disposition, not per-answer fact sufficiency — an evidence bundle can be topically relevant while never establishing the one fact asked about. | Fixed + regression test |
 | **BUG-002** | Tool-reliability | A malformed order ID combined with a policy question ("Can I return ORD-ABCD? What's your return policy?") silently dropped the invalid-ID signal — only the policy half was answered. | The malformed-ID clarification existed only for *pure* order questions; the combined order+knowledge route had no equivalent signal to the model at all. | Fixed + regression test |
 | **BUG-003** | Multi-turn | An unrelated prior topic ("Do you ship internationally?") "rescued" a genuinely insufficient follow-up ("Which of your products are vegan?") into a false answerable disposition. | The two-pass topic-hint augmentation retried *every* insufficient query with the prior message as a hint, with no check the two were related. | Fixed + regression test |
-| **BUG-004** | Multi-source-grounding | "A final-sale bag arrived with a broken zipper... am I out of luck?" does not force a handoff, though the assignment's visible case expects one (doc 04 says a human must review before approval). | The heading containing the human-review sentence isn't retrieved for this query — a chunking/retrieval precision limit, not a routing bug. A message-keyword fix and a document-level fix were both considered and rejected (see architecture.md) as too broad or too narrow. | **Root-caused, deliberately not fixed** — documented limitation |
+| **BUG-004** | Multi-source-grounding | "A final-sale bag arrived with a broken zipper... am I out of luck?" does not force a handoff, though the assignment's visible case expects one (doc 04 says a human must review before approval). | The heading containing the human-review sentence isn't retrieved for this query — a chunking/retrieval precision limit, not a routing bug. A message-keyword fix and a document-level fix were both considered and rejected (see architecture.md) as too broad or too narrow. | Fixed + regression test |
 | **BUG-005** | Multi-turn | Found during Phase 8's final smoke test: a *short* unrelated question ("Which products are vegan?", 4 words) still slipped past BUG-003's word-count-only threshold and got contaminated by an adjacent Breeze Tumbler conflict topic. | Word count alone doesn't distinguish a short genuine follow-up ("What about Canada?") from a short but complete, self-contained question. | Fixed (added a referential-marker check alongside word count) + regression test |
 
-BUG-004 is not hidden: it fails openly in the evaluation output and is
-called out explicitly in this README, in `docs/evaluation-plan.md`, and
-in `docs/architecture.md`.
+BUG-004 was not hidden while it was open: it failed openly in the
+evaluation output, and its investigation and fix are documented in full
+in `docs/architecture.md` §22 (and referenced in `docs/evaluation-plan.md`).
+It is kept in this table, alongside the other four, as a complete record
+of every issue evaluation-driven development actually found — not just
+the ones still outstanding.
 
 ## Security / Threat Model
 
@@ -351,10 +355,10 @@ order records, full prompts, or any `RawOrderRecord` field.
 Exact, currently-observed results (re-verify with the commands shown):
 
 ```bash
-python -m pytest -q            # 508 passed
+python -m pytest -q            # 521 passed
 python -m ruff check .         # All checks passed!
 python -m mypy src/ tests/     # Success: no issues found in 79 source files
-python -m aster_row_agent.cli eval   # 27 passed, 1 failed (28 total) — see Bug Diary
+python -m aster_row_agent.cli eval   # 28 passed, 0 failed (28 total)
 ```
 
 ## Limitations
@@ -378,13 +382,6 @@ python -m aster_row_agent.cli eval   # 27 passed, 1 failed (28 total) — see Bu
   organic, sustainable, ...) is curated and finite — it catches the
   documented "vegan materials" class of gap but not an equivalent
   unsupported claim about a term not on the list.
-- **BUG-004** (see Bug Diary) remains open: one visible case
-  (`final-sale-damaged-exception`) does not force a handoff, because the
-  retrieval-selected evidence for that exact query doesn't include the
-  heading that states human review is required. A correct general fix
-  needs either finer-grained retrieval or a materially better
-  report-vs-hypothetical intent signal than message keywords can give;
-  both are out of proportion for this assignment's scope.
 - **No production deployment concerns addressed** — no auth, no rate
   limiting, no horizontal scaling — all explicitly out of scope per the
   assignment brief.
@@ -469,5 +466,5 @@ src/aster_row_agent/
 
 evaluation/                # visible-cases.json (verbatim), custom-cases.json, results-*.json
 docs/                       # phase-by-phase design + as-built documentation
-tests/unit/                 # ~508 tests, no real LLM or network calls
+tests/unit/                 # ~521 tests, no real LLM or network calls
 ```

@@ -239,12 +239,15 @@ transition rather than retroactively extended to match.
 - The suite never exercises live model phrasing quality (§3) — this is
   deliberate, not an oversight, and the honest tradeoff is documented
   there.
-- One visible case, `final-sale-damaged-exception`, fails in both the
-  baseline and final runs. This is BUG-004 in the bug diary
+- One visible case, `final-sale-damaged-exception`, originally failed in
+  both the baseline and final runs. This was BUG-004 in the bug diary
   (`docs/architecture.md` §20): doc 04's "must not promise...before a
   human review is completed" sentence lives in a heading the retriever
-  does not select for this exact query, so no current signal (message
-  keywords or retrieved evidence) reliably distinguishes "reporting an
-  actual damaged item" from "asking about the policy in the abstract."
-  Root-caused but deliberately not patched with a narrow keyword hack —
-  see the bug diary for the full reasoning.
+  does not select for this exact query, so no signal available at the
+  time (message keywords or retrieved evidence) reliably distinguished
+  "reporting an actual damaged item" from "asking about the policy in
+  the abstract." Root-caused after the original evaluation and
+  subsequently fixed in commit `430d9fb`, with a dedicated regression
+  test added — the evaluation suite now passes 28/28, and this is no
+  longer a current limitation (see `docs/architecture.md` §22 for the
+  fix).
